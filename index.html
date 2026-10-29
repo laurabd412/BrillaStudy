@@ -332,22 +332,73 @@ $("photos").addEventListener("change", event => {
     ? selectedFiles.length + " foto(s) seleccionada(s)" : "Adjuntar ejercicio";
 });
 
+  const API_URL = "https://brillastudy-api-2026.laura-breithauptdiaz-alumno.workers.dev/";
+const conversationHistory = [];
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 $("send").addEventListener("click", async () => {
   const question = $("question").value.trim();
   if (!question && !selectedFiles.length) return;
-  addMessage(question || "He adjuntado una foto de un ejercicio.", "user");
-  selectedFiles.forEach(file => addMessage("📎 " + file.name, "user"));
+
+  const files = [...selectedFiles];
+
+  addMessage(question || "Ayúdame con la imagen adjunta.", "user");
+  files.forEach(file => addMessage("📎 " + file.name, "user"));
+
   $("question").value = "";
   $("photos").value = "";
   $("preview").replaceChildren();
   selectedFiles = [];
 
-  addMessage(
-    "Tu mensaje está en la conversación, pero la IA todavía no está conectada. Para recibir respuestas reales y analizar las fotos, primero debemos configurar el servidor Gemini y conectarlo a esta página.",
-    "bot"
-  );
-});
+  const sendButton = $("send");
+  sendButton.disabled = true;
 
+  try {
+    const images = await Promise.all(
+      files.slice(0, 3).map(async file => ({
+        mimeType: file.type,
+        data: await fileToBase64(file)
+      }))
+    );
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: question,
+        history: conversationHistory.slice(-10),
+        images
+      })
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || "No se pudo conectar con la IA.");
+    }
+
+    addMessage(result.answer, "bot");
+
+    conversationHistory.push(
+      { role: "user", text: question || "Ayúdame con la imagen adjunta." },
+      { role: "assistant", text: result.answer }
+    );
+  } catch (error) {
+    addMessage(
+      "No he podido conectar con la IA: " + error.message,
+      "bot"
+    );
+  } finally {
+    sendButton.disabled = false;
+  }
+});
 function renderTasks() {
   $("task-list").replaceChildren();
   tasks.forEach((task, i) => {
